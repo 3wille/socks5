@@ -25,6 +25,8 @@ type Server struct {
 type Conn struct {
   server *Server
   rwc    net.Conn
+  User   string
+  Password string
   Data   interface{}
 }
 
