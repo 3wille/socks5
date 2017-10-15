@@ -169,6 +169,13 @@ func writeCommandErrorReply(c net.Conn, rep byte) error {
   return err
 }
 
+func getFromAddr(c *Conn) *net.IPAddr {
+  q := net.ParseIP("2001:470:1f0b:1354::1")
+  from := net.IPAddr{q, ""}
+  // from := net.TCPAddr{q, 0, ""}
+  return &from
+}
+
 func (c *Conn) commandConnect(cmd *cmd) error {
   var err error
   to := cmd.DestAddress()
@@ -185,12 +192,7 @@ func (c *Conn) commandConnect(cmd *cmd) error {
     }
   }
 
-  q := net.ParseIP("2001:470:1f0b:1354::1")
-  // fromIP := &net.IPAddr{q, ""}
-  from := &net.TCPAddr{q, 0, ""}
-  // dialer := net.Dialer{LocalAddr: from}
-  // conn, err := dialer.Dial("tcp", to)
-  // conn, err := net.Dial("tcp", to)
+  from := getFromAddr(c)
   var conn net.Conn
   hosta, errora := net.ResolveTCPAddr("tcp6", to)
   if errora != nil {
