@@ -176,12 +176,19 @@ func getFromAddr(c *Conn) *net.IPAddr {
   return &from
 }
 
+// handles the CONNECT command of the SOCKS5 proxy protocol
 func (c *Conn) commandConnect(cmd *cmd) error {
   var err error
+
+  // save the  destination address received from the client
   to := cmd.DestAddress()
+
+  // execute handlers defined outside this library
   for _, h := range c.server.connectHandlers {
     to, err = h.HandleConnect(c, to)
     if err != nil {
+
+      // If a handler returns an error, send ERROR answer to client
       if err == ErrConnectionNotAllowedByRuleset {
         writeCommandErrorReply(c.rwc, repConnectionNotAllowedByRuleset)
         return nil
@@ -192,23 +199,25 @@ func (c *Conn) commandConnect(cmd *cmd) error {
     }
   }
 
+  // Get the address that will be used as the from address for the outbound
+  // connection.
   from := getFromAddr(c)
+
   var conn net.Conn
-  hosta, errora := net.ResolveTCPAddr("tcp6", to)
-  if errora != nil {
-    log.Printf("C: %v", errora)
-    c.server.counts[0] = c.server.counts[0] + 1
+
+  // check if the target address is reachable over IPv6
+  // if it isn't, let the operating system decide how to connect
+  // if it is, use the from address retrieved above
+  ipv6_host, no_ipv6_error := net.ResolveTCPAddr("tcp6", to)
+  if no_ipv6_error != nil {
+    log.Printf("C: %v", no_ipv6_error)
     conn, err = net.Dial("tcp", to)
   } else {
-    log.Printf("B: %v", hosta)
-    c.server.counts[1] = c.server.counts[1] + 1
+    log.Printf("B: %v", ipv6_host)
     dialer := net.Dialer{LocalAddr: from}
-    conn, err = dialer.Dial("tcp6", hosta.String())
+    conn, err = dialer.Dial("tcp6", ipv6_host.String())
   }
-  log.Printf("Errors: %v", c.server.counts[0])
-  log.Printf("Successes: %v", c.server.counts[1])
-  // log.Printf("F: %v", conn.RemoteAddr())
-  // log.Printf("G: %v", conn.LocalAddr())
+
   if err != nil {
     switch e := err.(type) {
     case *net.OpError:
