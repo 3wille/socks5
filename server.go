@@ -11,6 +11,8 @@ import (
   "strconv"
   "sync"
   "time"
+  "math/rand"
+  "encoding/binary"
 )
 
 type Server struct {
@@ -169,18 +171,52 @@ func writeCommandErrorReply(c net.Conn, rep byte) error {
   return err
 }
 
-func getFromAddr(c *Conn) *net.IPAddr {
-  q := net.ParseIP("2001:470:1f0b:1354::1")
-  from := net.IPAddr{q, ""}
+// retrieve address for the credential combination of the connection
+// if the credentials are used the first time, a new address is generated
+// TODO implement
+func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
+  return buildNewRandomAddr()
+}
+
+// generate a random IPv6 address
+// TODO RFC3041 conformity
+// https://tools.ietf.org/html/rfc3041
+func buildNewRandomAddr() (*net.TCPAddr, error) {
+  // parse prefix to byte representation
+  prefixIP, _, err := net.ParseCIDR("2001:470:1f0b:1354::/64")
+  if err != nil {
+    return nil, err
+    log.Printf("%v", err)
+  }
+
+  // generate a 64bit random int and split it into a byte array
+  randomByteArray := make([]byte, 8)
+  binary.LittleEndian.PutUint64(randomByteArray, rand.Uint64())
+
+  // addrArray is put together from two byte arrays of bits each
+  // 1: `prefixIP[:8]` the first 8bits (0-7) of the prefix
+  // 2: `randomByteArray...` each Element of randomByteArray
+  addrArray := append(prefixIP[:8], randomByteArray...)
+  // ipAddr is the 'IP' object instance for containing the addrArray
+  ipAddr := make(net.IP, net.IPv6len)
+  log.Printf("ASD: %v", len(addrArray))
+  copy(ipAddr, addrArray)
+  log.Printf("%08b", ipAddr[12])
+
+  // TODO debugging code
+  // q := net.ParseIP("2001:470:1f0b:1354:0:52:fdfc:721")
   // from := net.TCPAddr{q, 0, ""}
-  return &from
+
+  // let the OS assign some port
+  from := net.TCPAddr{ipAddr, 0, ""}
+  return &from, nil
 }
 
 // handles the CONNECT command of the SOCKS5 proxy protocol
 func (c *Conn) commandConnect(cmd *cmd) error {
   var err error
 
-  // save the  destination address received from the client
+  // save the  destination address received fromAddress the client
   to := cmd.DestAddress()
 
   // execute handlers defined outside this library
@@ -199,22 +235,30 @@ func (c *Conn) commandConnect(cmd *cmd) error {
     }
   }
 
-  // Get the address that will be used as the from address for the outbound
-  // connection.
-  from := getFromAddr(c)
-
   var conn net.Conn
+
+  log.Printf("D: %v", to)
 
   // check if the target address is reachable over IPv6
   // if it isn't, let the operating system decide how to connect
-  // if it is, use the from address retrieved above
+  // if it is, resolve to an IPv6 address and connect to that
   ipv6_host, no_ipv6_error := net.ResolveTCPAddr("tcp6", to)
   if no_ipv6_error != nil {
     log.Printf("C: %v", no_ipv6_error)
     conn, err = net.Dial("tcp", to)
   } else {
+    // Get the address that will be used as the from address for the outbound
+    // connection.
+    fromAddress, fromAddressError := getFromAddr(c)
+    if fromAddressError != nil {
+      writeCommandErrorReply(c.rwc, repGeneralSocksServerFailure)
+      return err
+    } else {
+      log.Printf("From Adress: %v", fromAddress)
+    }
+
     log.Printf("B: %v", ipv6_host)
-    dialer := net.Dialer{LocalAddr: from}
+    dialer := net.Dialer{LocalAddr: fromAddress}
     conn, err = dialer.Dial("tcp6", ipv6_host.String())
   }
 
