@@ -22,6 +22,7 @@ type Server struct {
   connectHandlers                      []ConnectHandler
   closeHandlers                        []CloseHandler
   counts                               [2]int
+  AddressStore *AddressStore
 }
 
 type Conn struct {
@@ -32,11 +33,23 @@ type Conn struct {
   Data   interface{}
 }
 
+type AddressStore struct {
+  mapping map[string]*net.TCPAddr
+}
+
+func (addrSt *AddressStore) getIPAddr(username, password string) *net.TCPAddr  {
+  log.Printf("ASD: %v", username + password)
+  return addrSt.mapping[username + password]
+}
+
 func New() *Server {
   counts := [2]int{0, 0}
+  addrStore := &AddressStore{}
+  addrStore.mapping = make(map[string]*net.TCPAddr)
   return &Server{
     Logger: log.New(os.Stderr, "", log.LstdFlags),
     counts: counts,
+    AddressStore: addrStore,
   }
 }
 
@@ -175,7 +188,20 @@ func writeCommandErrorReply(c net.Conn, rep byte) error {
 // if the credentials are used the first time, a new address is generated
 // TODO implement
 func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
-  return buildNewRandomAddr()
+  var err error
+  addressStore := connection.server.AddressStore
+  address := addressStore.getIPAddr(connection.User, connection.Password)
+  log.Printf("User: %v, PW: %v", connection.User, connection.Password)
+    log.Printf("old addr: %v", address)
+  if address == nil {
+    address, err = buildNewRandomAddr()
+    if address != nil {
+      addressStore.mapping[connection.User + connection.Password] = address
+    }
+    log.Printf("new addr: %v", address)
+  }
+  log.Printf("E: %v", address)
+  return address, err
 }
 
 // generate a random IPv6 address
@@ -186,7 +212,7 @@ func buildNewRandomAddr() (*net.TCPAddr, error) {
   prefixIP, _, err := net.ParseCIDR("2001:470:1f0b:1354::/64")
   if err != nil {
     return nil, err
-    log.Printf("%v", err)
+    log.Printf("ERR: %v", err)
   }
 
   // generate a 64bit random int and split it into a byte array
@@ -199,9 +225,7 @@ func buildNewRandomAddr() (*net.TCPAddr, error) {
   addrArray := append(prefixIP[:8], randomByteArray...)
   // ipAddr is the 'IP' object instance for containing the addrArray
   ipAddr := make(net.IP, net.IPv6len)
-  log.Printf("ASD: %v", len(addrArray))
   copy(ipAddr, addrArray)
-  log.Printf("%08b", ipAddr[12])
 
   // TODO debugging code
   // q := net.ParseIP("2001:470:1f0b:1354:0:52:fdfc:721")
@@ -257,7 +281,7 @@ func (c *Conn) commandConnect(cmd *cmd) error {
       log.Printf("From Adress: %v", fromAddress)
     }
 
-    log.Printf("B: %v", ipv6_host)
+    log.Printf("To Adress: %v", ipv6_host)
     dialer := net.Dialer{LocalAddr: fromAddress}
     conn, err = dialer.Dial("tcp6", ipv6_host.String())
   }
