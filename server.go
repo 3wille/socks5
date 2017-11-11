@@ -37,8 +37,10 @@ type AddressStore struct {
   mapping map[string]*net.TCPAddr
 }
 
+// return the address which is mapped by the combination of username and password
+// return might be nil, if the address was not saved yet
 func (addrSt *AddressStore) getIPAddr(username, password string) *net.TCPAddr  {
-  log.Printf("ASD: %v", username + password)
+  // the mapped string is just the concatenation of username and password
   return addrSt.mapping[username + password]
 }
 
@@ -186,19 +188,24 @@ func writeCommandErrorReply(c net.Conn, rep byte) error {
 
 // retrieve address for the credential combination of the connection
 // if the credentials are used the first time, a new address is generated
-// TODO implement
 func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
   var err error
   addressStore := connection.server.AddressStore
+
+  // try to get a stored IPAddr basaed on user and password
   address := addressStore.getIPAddr(connection.User, connection.Password)
   log.Printf("User: %v, PW: %v", connection.User, connection.Password)
-    log.Printf("old addr: %v", address)
+  log.Printf("old addr: %v", address)
+
+  // if no address was found, build a new one and store it
   if address == nil {
+    // build random address
     address, err = buildNewRandomAddr()
+    // if address is nil, there must be an error, which is returned later
     if address != nil {
       addressStore.mapping[connection.User + connection.Password] = address
+      log.Printf("new addr: %v", address)
     }
-    log.Printf("new addr: %v", address)
   }
   log.Printf("E: %v", address)
   return address, err
@@ -227,7 +234,7 @@ func buildNewRandomAddr() (*net.TCPAddr, error) {
   ipAddr := make(net.IP, net.IPv6len)
   copy(ipAddr, addrArray)
 
-  // TODO debugging code
+  // TODO remove debugging code
   // q := net.ParseIP("2001:470:1f0b:1354:0:52:fdfc:721")
   // from := net.TCPAddr{q, 0, ""}
 
@@ -285,6 +292,9 @@ func (c *Conn) commandConnect(cmd *cmd) error {
     dialer := net.Dialer{LocalAddr: fromAddress}
     conn, err = dialer.Dial("tcp6", ipv6_host.String())
   }
+
+  // context-aware behaviour ends here
+  // from now on normal SOCKS5 process
 
   if err != nil {
     switch e := err.(type) {
