@@ -44,148 +44,6 @@ func (addrSt *AddressStore) getIPAddr(username, password string) *net.TCPAddr  {
   return addrSt.mapping[username + password]
 }
 
-func New() *Server {
-  counts := [2]int{0, 0}
-  addrStore := &AddressStore{}
-  addrStore.mapping = make(map[string]*net.TCPAddr)
-  return &Server{
-    Logger: log.New(os.Stderr, "", log.LstdFlags),
-    counts: counts,
-    AddressStore: addrStore,
-  }
-}
-
-func (srv *Server) HandleConnect(h ConnectHandler) {
-  srv.connectHandlers = append(srv.connectHandlers, h)
-}
-
-func (srv *Server) HandleConnectFunc(h func(c *Conn, host string) (newHost string, err error)) {
-  srv.connectHandlers = append(srv.connectHandlers, FuncConnectHandler(h))
-}
-
-func (srv *Server) HandleClose(h CloseHandler) {
-  srv.closeHandlers = append(srv.closeHandlers, h)
-}
-
-func (srv *Server) HandleCloseFunc(h func(c *Conn)) {
-  srv.closeHandlers = append(srv.closeHandlers, FuncCloseHandler(h))
-}
-
-func (srv *Server) ListenAndServe(addr string) error {
-  l, err := net.Listen("tcp", addr)
-  if err != nil {
-    return err
-  }
-
-  defer l.Close()
-  var tempDelay time.Duration // how long to sleep on accept failure
-  for {
-    rw, err := l.Accept()
-    if err != nil {
-      if ne, ok := err.(net.Error); ok && ne.Temporary() {
-        if tempDelay == 0 {
-          tempDelay = 5 * time.Millisecond
-        } else {
-          tempDelay *= 2
-        }
-        if max := 1 * time.Second; tempDelay > max {
-          tempDelay = max
-        }
-        srv.Logger.Printf("socks5: Accept error: %v; retrying in %v", err, tempDelay)
-        time.Sleep(tempDelay)
-        continue
-      }
-      return err
-    }
-    tempDelay = 0
-    c, err := srv.newConn(rw)
-    if err != nil {
-      srv.Logger.Printf("socks5: Server.newConn: %v", err)
-      continue
-    }
-    go c.serve()
-  }
-}
-
-func (srv *Server) newConn(c net.Conn) (*Conn, error) {
-  conn := &Conn{
-    server: srv,
-    rwc:    c,
-  }
-  return conn, nil
-}
-
-func (c *Conn) RemoteAddr() string {
-  return c.rwc.RemoteAddr().String()
-}
-
-func (c *Conn) LocalAddr() string {
-  return c.rwc.LocalAddr().String()
-}
-
-func (c *Conn) handshakeNoAuth() error {
-  if err := c.server.AuthNoAuthenticationRequiredCallback(c); err != nil {
-    return err
-  }
-
-  _, err := c.rwc.Write([]byte{verSocks5, authNoAuthenticationRequired})
-  return err
-}
-
-func (c *Conn) handshakeUsernamePassword() error {
-  if _, err := c.rwc.Write([]byte{verSocks5, authUsernamePassword}); err != nil {
-    return err
-  }
-
-  var up userpass
-  if _, err := up.ReadFrom(c.rwc); err != nil {
-    c.rwc.Write([]byte{authUsernamePasswordVersion, authUsernamePasswordStatusFailure})
-    return err
-  }
-
-  err := c.server.AuthUsernamePasswordCallback(c, up.uname, up.passwd)
-  if err != nil {
-    c.rwc.Write([]byte{authUsernamePasswordVersion, authUsernamePasswordStatusFailure})
-    return err
-  }
-
-  _, err = c.rwc.Write([]byte{authUsernamePasswordVersion, authUsernamePasswordStatusSuccess})
-  return err
-}
-
-func (c *Conn) handshake() error {
-  var head header
-  if _, err := head.ReadFrom(c.rwc); err != nil {
-    return err
-  }
-
-  if c.server.AuthNoAuthenticationRequiredCallback != nil && bytes.IndexByte(head.methods, authNoAuthenticationRequired) != -1 {
-    err := c.handshakeNoAuth()
-    if err != ErrAuthenticationFailed {
-      return err // success or critical error
-    }
-  }
-
-  if c.server.AuthUsernamePasswordCallback != nil && bytes.IndexByte(head.methods, authUsernamePassword) != -1 {
-    return c.handshakeUsernamePassword()
-  }
-
-  c.rwc.Write([]byte{verSocks5, authNoAcceptableMethods})
-  return ErrAuthenticationFailed
-}
-
-func writeCommandErrorReply(c net.Conn, rep byte) error {
-  _, err := c.Write([]byte{
-    verSocks5,
-    rep,
-    rsvReserved,
-    atypIPv4Address,
-    0, 0, 0, 0,
-    0, 0,
-  })
-  return err
-}
-
 // retrieve address for the credential combination of the connection
 // if the credentials are used the first time, a new address is generated
 func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
@@ -378,6 +236,148 @@ func (c *Conn) commandConnect(cmd *cmd) error {
     return err2
   }
   return nil
+}
+
+func New() *Server {
+  counts := [2]int{0, 0}
+  addrStore := &AddressStore{}
+  addrStore.mapping = make(map[string]*net.TCPAddr)
+  return &Server{
+    Logger: log.New(os.Stderr, "", log.LstdFlags),
+    counts: counts,
+    AddressStore: addrStore,
+  }
+}
+
+func (srv *Server) HandleConnect(h ConnectHandler) {
+  srv.connectHandlers = append(srv.connectHandlers, h)
+}
+
+func (srv *Server) HandleConnectFunc(h func(c *Conn, host string) (newHost string, err error)) {
+  srv.connectHandlers = append(srv.connectHandlers, FuncConnectHandler(h))
+}
+
+func (srv *Server) HandleClose(h CloseHandler) {
+  srv.closeHandlers = append(srv.closeHandlers, h)
+}
+
+func (srv *Server) HandleCloseFunc(h func(c *Conn)) {
+  srv.closeHandlers = append(srv.closeHandlers, FuncCloseHandler(h))
+}
+
+func (srv *Server) ListenAndServe(addr string) error {
+  l, err := net.Listen("tcp", addr)
+  if err != nil {
+    return err
+  }
+
+  defer l.Close()
+  var tempDelay time.Duration // how long to sleep on accept failure
+  for {
+    rw, err := l.Accept()
+    if err != nil {
+      if ne, ok := err.(net.Error); ok && ne.Temporary() {
+        if tempDelay == 0 {
+          tempDelay = 5 * time.Millisecond
+        } else {
+          tempDelay *= 2
+        }
+        if max := 1 * time.Second; tempDelay > max {
+          tempDelay = max
+        }
+        srv.Logger.Printf("socks5: Accept error: %v; retrying in %v", err, tempDelay)
+        time.Sleep(tempDelay)
+        continue
+      }
+      return err
+    }
+    tempDelay = 0
+    c, err := srv.newConn(rw)
+    if err != nil {
+      srv.Logger.Printf("socks5: Server.newConn: %v", err)
+      continue
+    }
+    go c.serve()
+  }
+}
+
+func (srv *Server) newConn(c net.Conn) (*Conn, error) {
+  conn := &Conn{
+    server: srv,
+    rwc:    c,
+  }
+  return conn, nil
+}
+
+func (c *Conn) RemoteAddr() string {
+  return c.rwc.RemoteAddr().String()
+}
+
+func (c *Conn) LocalAddr() string {
+  return c.rwc.LocalAddr().String()
+}
+
+func (c *Conn) handshakeNoAuth() error {
+  if err := c.server.AuthNoAuthenticationRequiredCallback(c); err != nil {
+    return err
+  }
+
+  _, err := c.rwc.Write([]byte{verSocks5, authNoAuthenticationRequired})
+  return err
+}
+
+func (c *Conn) handshakeUsernamePassword() error {
+  if _, err := c.rwc.Write([]byte{verSocks5, authUsernamePassword}); err != nil {
+    return err
+  }
+
+  var up userpass
+  if _, err := up.ReadFrom(c.rwc); err != nil {
+    c.rwc.Write([]byte{authUsernamePasswordVersion, authUsernamePasswordStatusFailure})
+    return err
+  }
+
+  err := c.server.AuthUsernamePasswordCallback(c, up.uname, up.passwd)
+  if err != nil {
+    c.rwc.Write([]byte{authUsernamePasswordVersion, authUsernamePasswordStatusFailure})
+    return err
+  }
+
+  _, err = c.rwc.Write([]byte{authUsernamePasswordVersion, authUsernamePasswordStatusSuccess})
+  return err
+}
+
+func (c *Conn) handshake() error {
+  var head header
+  if _, err := head.ReadFrom(c.rwc); err != nil {
+    return err
+  }
+
+  if c.server.AuthNoAuthenticationRequiredCallback != nil && bytes.IndexByte(head.methods, authNoAuthenticationRequired) != -1 {
+    err := c.handshakeNoAuth()
+    if err != ErrAuthenticationFailed {
+      return err // success or critical error
+    }
+  }
+
+  if c.server.AuthUsernamePasswordCallback != nil && bytes.IndexByte(head.methods, authUsernamePassword) != -1 {
+    return c.handshakeUsernamePassword()
+  }
+
+  c.rwc.Write([]byte{verSocks5, authNoAcceptableMethods})
+  return ErrAuthenticationFailed
+}
+
+func writeCommandErrorReply(c net.Conn, rep byte) error {
+  _, err := c.Write([]byte{
+    verSocks5,
+    rep,
+    rsvReserved,
+    atypIPv4Address,
+    0, 0, 0, 0,
+    0, 0,
+  })
+  return err
 }
 
 func (c *Conn) command() error {
