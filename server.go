@@ -23,6 +23,7 @@ type Server struct {
   closeHandlers                        []CloseHandler
   counts                               [2]int
   AddressStore *AddressStore
+  Prefixes []net.IP
 }
 
 type Conn struct {
@@ -35,6 +36,19 @@ type Conn struct {
 
 type AddressStore struct {
   mapping map[string]*net.TCPAddr
+}
+
+// create a new Server object
+func New(prefixes []net.IP) *Server {
+  counts := [2]int{0, 0}
+  addrStore := &AddressStore{}
+  addrStore.mapping = make(map[string]*net.TCPAddr)
+  return &Server{
+    Logger: log.New(os.Stderr, "", log.LstdFlags),
+    counts: counts,
+    AddressStore: addrStore,
+    Prefixes: prefixes,
+  }
 }
 
 // return the address which is mapped by the combination of username and password
@@ -50,7 +64,7 @@ func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
   var err error
   addressStore := connection.server.AddressStore
 
-  // try to get a stored IPAddr basaed on user and password
+  // try to get a stored IPAddr based on user and password
   address := addressStore.getIPAddr(connection.User, connection.Password)
   log.Printf("User: %v, PW: %v", connection.User, connection.Password)
   log.Printf("old addr: %v", address)
@@ -58,7 +72,7 @@ func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
   // if no address was found, build a new one and store it
   if address == nil {
     // build random address
-    address, err = buildNewRandomAddr()
+    address, err = buildNewRandomAddr(connection.server)
     // if address is nil, there must be an error, which is returned later
     if address != nil {
       addressStore.mapping[connection.User + connection.Password] = address
@@ -72,9 +86,12 @@ func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
 // generate a random IPv6 address
 // TODO RFC3041 conformity
 // https://tools.ietf.org/html/rfc3041
-func buildNewRandomAddr() (*net.TCPAddr, error) {
+func buildNewRandomAddr(srv *Server) (*net.TCPAddr, error) {
   // parse prefix to byte representation
-  prefixIP, _, err := net.ParseCIDR("2001:470:1f0b:1354::/64")
+  // prefixIP, _, err := net.ParseCIDR("2001:470:1f0b:1354::/64")
+  log.Printf("%v", srv.Prefixes)
+  prefixIP := srv.Prefixes[0]
+  var err error
   if err != nil {
     return nil, err
     log.Printf("ERR: %v", err)
@@ -236,17 +253,6 @@ func (c *Conn) commandConnect(cmd *cmd) error {
     return err2
   }
   return nil
-}
-
-func New() *Server {
-  counts := [2]int{0, 0}
-  addrStore := &AddressStore{}
-  addrStore.mapping = make(map[string]*net.TCPAddr)
-  return &Server{
-    Logger: log.New(os.Stderr, "", log.LstdFlags),
-    counts: counts,
-    AddressStore: addrStore,
-  }
 }
 
 func (srv *Server) HandleConnect(h ConnectHandler) {
