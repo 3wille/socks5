@@ -85,8 +85,8 @@ func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
 func buildNewRandomAddr(srv *Server) (*net.TCPAddr, error) {
   // parse prefix to byte representation
   // prefixIP, _, err := net.ParseCIDR("2001:470:1f0b:1354::/64")
-  // TODO use random prefix
-  prefixIP := srv.Prefixes[0]
+  randomPrefixIndex := rand.Intn(len(srv.Prefixes))
+  prefixIP := srv.Prefixes[randomPrefixIndex]
   var err error
   if err != nil {
     return nil, err
@@ -101,6 +101,7 @@ func buildNewRandomAddr(srv *Server) (*net.TCPAddr, error) {
   // 1: `prefixIP[:8]` the first 8bits (0-7) of the prefix
   // 2: `randomByteArray...` each Element of randomByteArray
   addrArray := append(prefixIP[:8], randomByteArray...)
+
   // ipAddr is the 'IP' object instance for containing the addrArray
   ipAddr := make(net.IP, net.IPv6len)
   copy(ipAddr, addrArray)
@@ -145,6 +146,7 @@ func (c *Conn) commandConnect(cmd *cmd) error {
   ipv6_host, no_ipv6_error := net.ResolveTCPAddr("tcp6", to)
   if no_ipv6_error != nil {
     log.Printf("Connecting with IPv4: %v", no_ipv6_error)
+    log.Printf("To: %v", to)
     conn, err = net.Dial("tcp", to)
   } else {
     // Get the address that will be used as the from address for the outbound
