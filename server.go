@@ -66,8 +66,6 @@ func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
 
   // try to get a stored IPAddr based on user and password
   address := addressStore.getIPAddr(connection.User, connection.Password)
-  log.Printf("User: %v, PW: %v", connection.User, connection.Password)
-  log.Printf("old addr: %v", address)
 
   // if no address was found, build a new one and store it
   if address == nil {
@@ -76,10 +74,8 @@ func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
     // if address is nil, there must be an error, which is returned later
     if address != nil {
       addressStore.mapping[connection.User + connection.Password] = address
-      log.Printf("new addr: %v", address)
     }
   }
-  log.Printf("E: %v", address)
   return address, err
 }
 
@@ -89,7 +85,7 @@ func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
 func buildNewRandomAddr(srv *Server) (*net.TCPAddr, error) {
   // parse prefix to byte representation
   // prefixIP, _, err := net.ParseCIDR("2001:470:1f0b:1354::/64")
-  log.Printf("%v", srv.Prefixes)
+  // TODO use random prefix
   prefixIP := srv.Prefixes[0]
   var err error
   if err != nil {
@@ -143,14 +139,12 @@ func (c *Conn) commandConnect(cmd *cmd) error {
 
   var conn net.Conn
 
-  log.Printf("D: %v", to)
-
   // check if the target address is reachable over IPv6
   // if it isn't, let the operating system decide how to connect
   // if it is, resolve to an IPv6 address and connect to that
   ipv6_host, no_ipv6_error := net.ResolveTCPAddr("tcp6", to)
   if no_ipv6_error != nil {
-    log.Printf("C: %v", no_ipv6_error)
+    log.Printf("Connecting with IPv4: %v", no_ipv6_error)
     conn, err = net.Dial("tcp", to)
   } else {
     // Get the address that will be used as the from address for the outbound
@@ -159,11 +153,9 @@ func (c *Conn) commandConnect(cmd *cmd) error {
     if fromAddressError != nil {
       writeCommandErrorReply(c.rwc, repGeneralSocksServerFailure)
       return err
-    } else {
-      log.Printf("From Adress: %v", fromAddress)
     }
 
-    log.Printf("To Adress: %v", ipv6_host)
+    log.Printf("Connecting to %v with %v", to, fromAddress)
     dialer := net.Dialer{LocalAddr: fromAddress}
     conn, err = dialer.Dial("tcp6", ipv6_host.String())
   }
