@@ -81,6 +81,7 @@ func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
 
 // generate a random IPv6 address
 // TODO RFC3041 conformity
+// TODO detect prefix length and required random length
 // https://tools.ietf.org/html/rfc3041
 func buildNewRandomAddr(srv *Server) (*net.TCPAddr, error) {
   // parse prefix to byte representation
