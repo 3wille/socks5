@@ -13,6 +13,7 @@ import (
 	"time"
 	"math/rand"
 	"encoding/binary"
+	"github.com/olekukonko/tablewriter"
 )
 
 type Server struct {
@@ -75,6 +76,8 @@ func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
 		if address != nil {
 			addressStore.mapping[connection.User + connection.Password] = address
 		}
+
+		printAddrMapping(connection.server)
 	}
 	return address, err
 }
@@ -114,6 +117,24 @@ func buildNewRandomAddr(srv *Server) (*net.TCPAddr, error) {
 	// let the OS assign some port
 	from := net.TCPAddr{ipAddr, 0, ""}
 	return &from, nil
+}
+
+func printAddrMapping(srv *Server) {
+	tableData := [][]string{}
+	log.Printf("%v", srv.AddressStore.mapping)
+	for origin, address := range srv.AddressStore.mapping {
+		log.Printf("A %v", origin)
+		log.Printf("B %v", address.IP.String())
+		tableData = append(tableData, []string{origin, address.IP.String()})
+	}
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"Origin", "Address"})
+
+	for _, v := range tableData {
+	    table.Append(v)
+	}
+	table.Render() // Send output
 }
 
 // handles the CONNECT command of the SOCKS5 proxy protocol
