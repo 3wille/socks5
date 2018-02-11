@@ -2,17 +2,18 @@ package socks5
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"runtime"
 	"strconv"
 	"sync"
 	"time"
-	"math/rand"
-	"encoding/binary"
+
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -23,16 +24,16 @@ type Server struct {
 	connectHandlers                      []ConnectHandler
 	closeHandlers                        []CloseHandler
 	counts                               [2]int
-	AddressStore *AddressStore
-	Prefixes []net.IP
+	AddressStore                         *AddressStore
+	Prefixes                             []net.IP
 }
 
 type Conn struct {
-	server *Server
-	rwc    net.Conn
-	User   string
+	server   *Server
+	rwc      net.Conn
+	User     string
 	Password string
-	Data   interface{}
+	Data     interface{}
 }
 
 type AddressStore struct {
@@ -45,18 +46,18 @@ func New(prefixes []net.IP) *Server {
 	addrStore := &AddressStore{}
 	addrStore.mapping = make(map[string]*net.TCPAddr)
 	return &Server{
-		Logger: log.New(os.Stderr, "", log.LstdFlags),
-		counts: counts,
+		Logger:       log.New(os.Stderr, "", log.LstdFlags),
+		counts:       counts,
 		AddressStore: addrStore,
-		Prefixes: prefixes,
+		Prefixes:     prefixes,
 	}
 }
 
 // return the address which is mapped by the combination of username and password
 // return might be nil, if the address was not saved yet
-func (addrSt *AddressStore) getIPAddr(username, password string) *net.TCPAddr  {
+func (addrSt *AddressStore) getIPAddr(username, password string) *net.TCPAddr {
 	// the mapped string is just the concatenation of username and password
-	return addrSt.mapping[username + password]
+	return addrSt.mapping[username+password]
 }
 
 // retrieve address for the credential combination of the connection
@@ -74,7 +75,7 @@ func getFromAddr(connection *Conn) (*net.TCPAddr, error) {
 		address, err = buildNewRandomAddr(connection.server)
 		// if address is nil, there must be an error, which is returned later
 		if address != nil {
-			addressStore.mapping[connection.User + connection.Password] = address
+			addressStore.mapping[connection.User+connection.Password] = address
 		}
 
 		printAddrMapping(connection.server)
@@ -91,11 +92,9 @@ func buildNewRandomAddr(srv *Server) (*net.TCPAddr, error) {
 	// prefixIP, _, err := net.ParseCIDR("2001:470:1f0b:1354::/64")
 	randomPrefixIndex := rand.Intn(len(srv.Prefixes))
 	prefixIP := srv.Prefixes[randomPrefixIndex]
-	var err error
-	if err != nil {
-		return nil, err
-		log.Printf("ERR: %v", err)
-	}
+
+	// log prefix length
+	// log.Printf("F: %v", prefixIP.Mask())
 
 	// generate a 64bit random int and split it into a byte array
 	randomByteArray := make([]byte, 8)
@@ -132,7 +131,7 @@ func printAddrMapping(srv *Server) {
 	table.SetHeader([]string{"Origin", "Address"})
 
 	for _, v := range tableData {
-	    table.Append(v)
+		table.Append(v)
 	}
 	table.Render() // Send output
 }
@@ -179,7 +178,7 @@ func (c *Conn) commandConnect(cmd *cmd) error {
 			return err
 		}
 
-		log.Printf("Connecting to %v with %v", to, fromAddress)
+		// log.Printf("Connecting to %v with %v", to, fromAddress)
 		dialer := net.Dialer{LocalAddr: fromAddress}
 		conn, err = dialer.Dial("tcp6", ipv6_host.String())
 	}
